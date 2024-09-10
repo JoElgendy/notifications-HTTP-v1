@@ -1,0 +1,196 @@
+<?php
+
+// ============================  Before  ============================
+
+function sendnotification__wrong__($title, $message, $topic)
+{
+
+
+    $url = 'https://fcm.googleapis.com/fcm/send';         
+
+    $fields = array(
+        "to" => '/topics/' . $topic,
+        'priority' => 'high',
+        'content_available' => true,
+
+        'notification' => array(
+            "body" =>  $message,
+            "title" =>  $title,
+            "click_action" => "FLUTTER_NOTIFICATION_CLICK",
+            "sound" => "default"
+
+        ),
+        "data" => array(
+            "time" => "10 Pm"
+        ),
+
+    );
+
+
+    $fields = json_encode($fields);
+    $headers = array(
+        'Authorization: key=' . "----------",
+        'Content-Type: application/json'
+    );
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $fields);
+
+    $result = curl_exec($ch);
+    return $result;
+    curl_close($ch);
+}
+
+
+// ============================  After  ============================
+
+
+function sendNotification($title, $message, $topic)
+{
+
+
+    $url = 'https://fcm.googleapis.com/v1/projects/----------------/messages:send';    // 1--- project_id from firebase
+
+
+    $fields = array(                                             // 2-------------- message 
+        "message" => array(
+            "topic" => $topic,                      // topic name
+            "notification" => array(
+                "title" => "$title",
+                "body" => "$message"
+            ),
+            "data" => array(
+                "time" => "10 Pm"
+            ),
+            "android" => array(
+                "notification" => array(
+                    "click_action" => "TOP_STORY_ACTIVITY",
+                    "sound" => "default"
+
+                )
+            ),
+            "apns" => array(
+                "payload" => array(
+                    "aps" => array(
+                        "category" => "NEW_MESSAGE_CATEGORY"
+                    )
+                )
+            )
+        )
+    );
+
+
+
+    $fields = json_encode($fields);
+    $headers = array(
+        'Authorization: Bearer ' . getAccessToken(),  //    3  ----   access token
+        'Content-Type: application/json'
+    );
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $fields);
+
+    $result = curl_exec($ch);
+    curl_close($ch);
+    return $result;
+}
+
+
+//   get access token 
+
+
+function getAccessToken() {
+    $serviceAccountJson = [                                     // 4  --------  private key
+        "type" => "",
+        "project_id" => "",
+        "private_key_id" => "",
+        "private_key" => "",
+        "client_email" => "",
+        "client_id" => "",
+        "auth_uri" => "https://accounts.google.com/o/oauth2/auth",
+        "token_uri" => "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url" => "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url" => "",
+        "universe_domain" => "googleapis.com"
+    ];
+
+    $scopes = [
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/firebase.database",
+        "https://www.googleapis.com/auth/firebase.messaging"
+    ];
+
+    try {
+        $tokenUrl = $serviceAccountJson['token_uri'];
+
+        // Create JWT to get an access token
+        $jwtPayload = [
+            "iss" => $serviceAccountJson['client_email'],
+            "scope" => implode(' ', $scopes),
+            "aud" => $tokenUrl,
+            "exp" => time() + 3600,
+            "iat" => time()
+        ];
+
+        // Encode and sign JWT (requires JWT library)
+        $jwt = createJWT($jwtPayload, $serviceAccountJson['private_key']);
+
+        // Use cURL to send request
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $tokenUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+            "grant_type" => "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion" => $jwt
+        ]));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json'
+        ]);
+
+        $result = curl_exec($ch);
+        if (curl_errno($ch)) {
+            throw new Exception('Error fetching access token: ' . curl_error($ch));
+        }
+
+        curl_close($ch);
+
+        // Parse the response to get the access token
+        $response = json_decode($result, true);
+        return $response['access_token'] ?? null;
+
+    } catch (Exception $e) {
+        echo "Error: " . $e->getMessage();
+        return null;
+    }
+}
+
+function createJWT($payload, $privateKey) {
+    // Example JWT creation using an external JWT library (like Firebase JWT)
+    $header = json_encode(['alg' => 'RS256', 'typ' => 'JWT']);
+    $payload = json_encode($payload);
+
+    // Encode Header and Payload
+    $base64UrlHeader = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($header));
+    $base64UrlPayload = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($payload));
+
+    // Create Signature Hash
+    $signature = '';
+    openssl_sign($base64UrlHeader . "." . $base64UrlPayload, $signature, $privateKey, 'sha256');
+
+    $base64UrlSignature = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($signature));
+
+    // Create JWT Token
+    $jwt = $base64UrlHeader . "." . $base64UrlPayload . "." . $base64UrlSignature;
+
+    return $jwt;
+}
+
